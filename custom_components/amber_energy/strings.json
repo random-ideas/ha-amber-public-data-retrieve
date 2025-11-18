@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Amber Energy Setup",
+        "description": "Enter your Australian postcode to retrieve Amber Energy pricing data.",
+        "data": {
+          "postcode": "Postcode",
+          "past_hours": "Past Hours to Retrieve (1-24)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Amber Energy API",
+      "invalid_postcode": "Invalid postcode or no data available",
+      "unknown": "Unexpected error occurred"
+    },
+    "abort": {
+      "already_configured": "This postcode is already configured"
+    }
+  }
+}
