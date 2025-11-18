@@ -125,9 +125,11 @@ The API returns pricing intervals with:
 
 Inspired by the [HA_AemoNemData](https://github.com/cabberley/HA_AemoNemData) integration.
 
+Almost exclusively written via LLM's, vibecoding is probably going to create the terminator but here we are
+
 ## License
 
-MIT License - feel free to use and modify as needed.
+GPL3
 
 ## Support
 
