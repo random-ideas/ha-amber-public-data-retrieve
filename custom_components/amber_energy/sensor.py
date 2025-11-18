@@ -124,7 +124,11 @@ class AmberCurrentPriceSensor(AmberBaseSensor):
         """Return the current price."""
         interval = self._get_current_interval()
         if interval:
-            return round(interval.get("perKwh", 0), 2)
+            price = interval.get("perKwh", 0)
+            # Invert feed-in prices (negative becomes positive, positive becomes negative)
+            if self._price_type == "feedin":
+                price = -price
+            return round(price, 2)
         return None
 
     @property
@@ -165,7 +169,11 @@ class AmberNextPriceSensor(AmberBaseSensor):
         """Return the next price."""
         interval = self._get_next_interval()
         if interval:
-            return round(interval.get("perKwh", 0), 2)
+            price = interval.get("perKwh", 0)
+            # Invert feed-in prices (negative becomes positive, positive becomes negative)
+            if self._price_type == "feedin":
+                price = -price
+            return round(price, 2)
         return None
 
     @property
@@ -249,9 +257,13 @@ class AmberDescriptorSensor(AmberBaseSensor):
         """Return additional attributes."""
         interval = self._get_current_interval()
         if interval:
+            price = interval.get("perKwh", 0)
+            # Invert feed-in prices in attributes too
+            if self._price_type == "feedin":
+                price = -price
             return {
                 "nem_time": interval.get("nemTime"),
-                "price_per_kwh": interval.get("perKwh"),
+                "price_per_kwh": round(price, 2),
                 "postcode": self._postcode,
             }
         return {}
