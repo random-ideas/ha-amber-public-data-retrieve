@@ -215,6 +215,7 @@ class AmberRenewablesSensor(AmberBaseSensor):
         if interval:
             return {
                 "nem_time": interval.get("nemTime"),
+                "descriptor": interval.get("descriptor"),
                 "postcode": self._postcode,
             }
         return {}
@@ -251,7 +252,8 @@ class AmberDescriptorSensor(AmberBaseSensor):
         if interval:
             return {
                 "nem_time": interval.get("nemTime"),
-                "price_per_kwh": interval.get("perKwh"),
+                "price_per_kwh": round(interval.get("perKwh", 0), 2),
+                "renewables": interval.get("renewables"),
                 "postcode": self._postcode,
             }
         return {}
