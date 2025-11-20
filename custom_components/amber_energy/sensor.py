@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, List, Tuple
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
 )
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 
@@ -68,8 +69,8 @@ class AmberBaseSensor(CoordinatorEntity, SensorEntity):
         """Return if entity is available."""
         return self.coordinator.last_update_success and bool(self._get_intervals())
 
-    def _get_intervals(self) -> list[dict[str, Any]] | None:
-        """Get the intervals for the price type."""
+    def _get_intervals(self) -> List[dict[str, Any]] | None:
+        """Get the intervals for the price type from the coordinator data."""
         if not self.coordinator.data:
             return None
 
@@ -83,20 +84,72 @@ class AmberBaseSensor(CoordinatorEntity, SensorEntity):
 
         return None
 
-    def _get_current_interval(self) -> dict[str, Any] | None:
-        """Get the most recent interval."""
+    def _intervals_with_dt(self) -> List[Tuple]:
+        """Return list of (datetime, interval) sorted by datetime (local)."""
         intervals = self._get_intervals()
-        if intervals:
-            # API usually returns in chronological order; last = most recent
-            return intervals[-1]
-        return None
+        items: List[Tuple] = []
+        if not intervals:
+            return items
+
+        for it in intervals:
+            nem = it.get("nemTime")
+            if not nem:
+                continue
+            try:
+                dt = dt_util.parse_datetime(nem)
+                if dt is None:
+                    continue
+                # Convert to local timezone used by Home Assistant
+                dt = dt_util.as_local(dt)
+                items.append((dt, it))
+            except Exception as err:  # pragma: no cover - defensive
+                _LOGGER.debug("Failed to parse nemTime '%s': %s", nem, err)
+                continue
+
+        items.sort(key=lambda x: x[0])
+        return items
+
+    def _get_current_interval(self) -> dict[str, Any] | None:
+        """
+        Determine the current interval:
+        - Prefer the most recent interval with nemTime <= now.
+        - If none, pick the earliest future interval (useful if API only returns future forecasts).
+        - Fallback to the last interval if parsing fails.
+        """
+        items = self._intervals_with_dt()
+        if not items:
+            return None
+
+        now = dt_util.now()
+        past_items = [it for it in items if it[0] <= now]
+        future_items = [it for it in items if it[0] > now]
+
+        if past_items:
+            # Most recent past (or exactly now)
+            return past_items[-1][1]
+        if future_items:
+            # No past, pick earliest future as "current" (API might only return forecasts)
+            return future_items[0][1]
+
+        # Fallback
+        return items[-1][1]
 
     def _get_next_interval(self) -> dict[str, Any] | None:
-        """Get the next interval if available."""
-        intervals = self._get_intervals()
-        if intervals and len(intervals) > 1:
-            # Second last is "next" relative to most recent
-            return intervals[-2]
+        """
+        Determine the next interval:
+        - The earliest interval with nemTime > now.
+        - If none, return None (no future available).
+        """
+        items = self._intervals_with_dt()
+        if not items:
+            return None
+
+        now = dt_util.now()
+        future_items = [it for it in items if it[0] > now]
+        if future_items:
+            return future_items[0][1]
+
+        # No future interval
         return None
 
 
@@ -121,19 +174,15 @@ class AmberCurrentPriceSensor(AmberBaseSensor):
 
     @property
     def native_value(self) -> float | None:
-        """Return the current price."""
+        """Return the current price (raw from API)."""
         interval = self._get_current_interval()
         if interval:
-            price = interval.get("perKwh", 0)
-            # Invert feed-in prices (negative becomes positive, positive becomes negative)
-            if self._price_type == "feedin":
-                price = -price
-            return round(price, 2)
+            return round(interval.get("perKwh", 0), 2)
         return None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return additional attributes."""
+        """Return additional attributes including descriptor and renewables."""
         interval = self._get_current_interval()
         if interval:
             return {
@@ -166,19 +215,15 @@ class AmberNextPriceSensor(AmberBaseSensor):
 
     @property
     def native_value(self) -> float | None:
-        """Return the next price."""
+        """Return the next price (raw from API)."""
         interval = self._get_next_interval()
         if interval:
-            price = interval.get("perKwh", 0)
-            # Invert feed-in prices (negative becomes positive, positive becomes negative)
-            if self._price_type == "feedin":
-                price = -price
-            return round(price, 2)
+            return round(interval.get("perKwh", 0), 2)
         return None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return additional attributes."""
+        """Return additional attributes including descriptor and renewables for next."""
         interval = self._get_next_interval()
         if interval:
             return {
@@ -210,7 +255,7 @@ class AmberRenewablesSensor(AmberBaseSensor):
 
     @property
     def native_value(self) -> float | None:
-        """Return the renewables percentage."""
+        """Return the renewables percentage for current interval."""
         interval = self._get_current_interval()
         if interval:
             return round(interval.get("renewables", 0), 2)
@@ -218,11 +263,11 @@ class AmberRenewablesSensor(AmberBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return additional attributes."""
         interval = self._get_current_interval()
         if interval:
             return {
                 "nem_time": interval.get("nemTime"),
+                "descriptor": interval.get("descriptor"),
                 "postcode": self._postcode,
             }
         return {}
@@ -246,7 +291,7 @@ class AmberDescriptorSensor(AmberBaseSensor):
 
     @property
     def native_value(self) -> str | None:
-        """Return the price descriptor."""
+        """Return the price descriptor (raw)."""
         interval = self._get_current_interval()
         if interval:
             return interval.get("descriptor")
@@ -254,16 +299,12 @@ class AmberDescriptorSensor(AmberBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return additional attributes."""
         interval = self._get_current_interval()
         if interval:
-            price = interval.get("perKwh", 0)
-            # Invert feed-in prices in attributes too
-            if self._price_type == "feedin":
-                price = -price
             return {
                 "nem_time": interval.get("nemTime"),
-                "price_per_kwh": round(price, 2),
+                "price_per_kwh": round(interval.get("perKwh", 0), 2),
+                "renewables": interval.get("renewables"),
                 "postcode": self._postcode,
             }
         return {}

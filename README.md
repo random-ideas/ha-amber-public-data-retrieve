@@ -6,10 +6,18 @@ A Home Assistant custom component to track and display real-time energy pricing 
 
 This integration provides the following sensors for both **General Usage** and **Feed-In** tariffs:
 
-- **Current Price** - Current electricity price per kWh
+- **Current Price** - Current electricity price per kWh (time-aware)
 - **Next Price** - Next interval's electricity price per kWh
 - **Renewables** - Current renewable energy percentage in the grid
 - **Descriptor** - Price level descriptor (e.g., "extremelyLow", "low", "neutral", "high", "spike")
+
+### Time-Aware Logic
+
+The integration intelligently determines the current and next intervals based on NEM timestamps:
+- **Current interval**: Most recent interval where `nemTime <= now`
+- **Next interval**: Earliest interval where `nemTime > now`
+
+This ensures accurate pricing even when the API returns past, current, and future intervals.
 
 ## Installation
 
@@ -25,7 +33,7 @@ This integration provides the following sensors for both **General Usage** and *
 
 ### Manual Installation
 
-1. Copy the `amber_energy` folder to your `custom_components` directory
+1. Copy the `custom_components/amber_energy` folder to your Home Assistant `custom_components` directory
 2. Restart Home Assistant
 
 ## Configuration
@@ -33,7 +41,7 @@ This integration provides the following sensors for both **General Usage** and *
 1. Go to **Settings** → **Devices & Services**
 2. Click **+ Add Integration**
 3. Search for "Amber Energy"
-4. Enter your Australian postcode (e.g., 4000)
+4. Enter your Australian postcode (e.g., `2000`)
 5. Optionally configure the number of past hours to retrieve (default: 1)
 
 ## Sensors Created
@@ -90,6 +98,19 @@ automation:
           message: "Electricity prices are extremely low! Good time to run appliances."
 ```
 
+### Template Sensor for Positive Feed-In Display
+
+If you prefer to display feed-in prices as positive values (the API may return negative values to indicate income), create a template sensor:
+
+```yaml
+template:
+  - sensor:
+      - name: "Amber Feed-In Current Price (Positive)"
+        state: "{{ (states('sensor.amber_feed_in_current_price') | float(0)) | abs }}"
+        unit_of_measurement: "¢/kWh"
+        device_class: monetary
+```
+
 ### Energy Dashboard Integration
 
 Add the price sensors to your Energy Dashboard to track costs in real-time.
@@ -106,7 +127,7 @@ This integration uses the public Amber Electric API:
 The API returns pricing intervals with:
 - `perKwh` - Price in cents per kilowatt-hour
 - `renewables` - Percentage of renewable energy
-- `nemTime` - National Electricity Market timestamp
+- `nemTime` - National Electricity Market timestamp (ISO 8601 format)
 - `descriptor` - Price level indicator
 
 ## Troubleshooting
@@ -117,19 +138,20 @@ The API returns pricing intervals with:
 - Review Home Assistant logs for API errors
 
 ### Sensors Not Updating
-- Check the integration is enabled in Settings → Devices & Services
+- Check the integration is enabled in **Settings → Devices & Services**
 - Verify the coordinator is updating (check logs)
 - Try reloading the integration
+
+### Feed-In Prices Showing as Negative
+This is expected behavior - the API returns negative values for feed-in to indicate income vs expense. Use a template sensor (see example above) to display as positive if preferred.
 
 ## Credits
 
 Inspired by the [HA_AemoNemData](https://github.com/cabberley/HA_AemoNemData) integration.
 
-Almost exclusively written via LLM's, vibecoding is probably going to create the terminator but here we are
-
 ## License
 
-GPL3
+MIT License - feel free to use and modify as needed.
 
 ## Support
 
